@@ -21,6 +21,10 @@ class TicketFlowCliTests(unittest.TestCase):
         self.assertEqual(args.issues, [191, 154, 156])
         self.assertTrue(args.dry_run)
 
+    def test_start_parses_auto_merge(self):
+        args = self.parser().parse_args(["start", "191", "--auto-merge", "--dry-run"])
+        self.assertTrue(args.auto_merge)
+
     def test_status_and_detach_subcommands_exist(self):
         status = self.parser().parse_args(["status", "--board", "demo"])
         detach = self.parser().parse_args(["detach", "--board", "demo", "--yes"])

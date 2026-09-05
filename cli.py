@@ -23,6 +23,7 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     start.add_argument("--board", help="Override generated Kanban board slug")
     start.add_argument("--workflow-id", help="Override generated workflow identity")
     start.add_argument("--research-ahead", type=int, help="Number of future tickets research may lead")
+    start.add_argument("--auto-merge", action="store_true", help="Skip the user checkpoint and merge after review and required checks")
     start.add_argument("--dry-run", action="store_true", help="Validate and print the plan without writing state")
     start.add_argument("--no-dispatch", action="store_true", help="Create the board without spawning ready workers")
     start.add_argument("--json", action="store_true", help="Print machine-readable JSON")
@@ -55,6 +56,8 @@ def _start(args: argparse.Namespace) -> int:
     overrides = core.load_optional_config(config_path)
     if args.research_ahead is not None:
         overrides = core._deep_merge(overrides, {"pipeline": {"research_ahead": args.research_ahead}})
+    if args.auto_merge:
+        overrides = core._deep_merge(overrides, {"pipeline": {"require_user_merge_confirmation": False}})
     config = core.effective_config(
         project,
         repository,

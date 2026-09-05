@@ -105,6 +105,9 @@ def validate_config(config: dict[str, Any]) -> None:
     research_ahead = config.get("pipeline", {}).get("research_ahead", 1)
     if isinstance(research_ahead, bool) or not isinstance(research_ahead, int) or research_ahead < 0:
         raise ValueError("pipeline.research_ahead must be a non-negative integer")
+    require_user_merge_confirmation = config.get("pipeline", {}).get("require_user_merge_confirmation", True)
+    if not isinstance(require_user_merge_confirmation, bool):
+        raise ValueError("pipeline.require_user_merge_confirmation must be a boolean")
     branch = config.get("worktrees", {}).get("branch_template", "")
     if "{issue}" not in branch:
         raise ValueError("worktrees.branch_template must contain {issue}")
@@ -192,10 +195,19 @@ def _body(config: dict[str, Any], issue: dict[str, Any], stage: str) -> str:
             "The reviewer is read-only; edits invalidate approval. Approval must preserve worktree and digest metadata."
         )
     gates = "\n".join(f"- `{gate}`" for gate in config.get("gates", {}).get("final", []))
+    if config["pipeline"]["require_user_merge_confirmation"]:
+        merge_policy = (
+            "then block for user merge confirmation. Put the PR URL in block metadata/summary, never an ordinary comment. "
+            "After unblocking, independently verify the expected head merged"
+        )
+    else:
+        merge_policy = (
+            "then merge automatically only after required GitHub checks pass, the expected head and approved digest remain unchanged, "
+            "and reviewer approval is still valid. Use a repository-permitted merge method and independently verify the expected head merged"
+        )
     return common + (
         "Stage: FINALIZE_AND_MERGE. Verify the approved digest, run every final gate below, commit atomically, push, open and read back "
-        "a PR containing `Closes #N`, then block for user merge confirmation. Put the PR URL in block metadata/summary, never an ordinary "
-        "comment. After unblocking, independently verify the expected head merged, synchronize clean main, reap the worktree and branches, "
+        f"a PR containing `Closes #N`, {merge_policy}, synchronize clean main, reap the worktree and branches, "
         "and complete with `references/merge-handoff.schema.json`. Do not release the next delivery before this.\n\nFinal gates:\n"
         + gates
     )

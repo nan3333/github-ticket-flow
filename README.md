@@ -27,11 +27,16 @@ From any GitHub checkout:
 ```bash
 hermes ticket-flow start 191 154 156 --dry-run
 hermes ticket-flow start 191 154 156
+hermes ticket-flow start 191 154 156 --auto-merge
 hermes ticket-flow status
 hermes ticket-flow detach --board <board> --yes
 ```
 
 The plugin infers the repository root and `owner/repo` from Git. Standard repositories require no workflow configuration.
+
+The default run stops at each PR for user merge confirmation. For an autonomous run, `--auto-merge` keeps independent review and final gates but lets the merge card merge after required GitHub checks pass and the approved head/digest are unchanged. The selected policy is recorded in the run manifest.
+
+Use the flag for a single run. To make autonomous merge the repository default, set `pipeline.require_user_merge_confirmation: false` in `.hermes/ticket-flow.yaml`; a run without the flag otherwise remains manual.
 
 ## Optional repository overrides
 

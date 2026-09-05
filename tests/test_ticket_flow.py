@@ -48,6 +48,33 @@ class TicketFlowPluginTests(unittest.TestCase):
         self.assertEqual(by_stage["merge"]["skills"], ["github-ticket-flow:workflow"])
         self.assertIn("hermes verify --json", by_stage["merge"]["body"])
 
+    def test_manual_merge_checkpoint_is_default(self):
+        cfg = ticket_flow.effective_config("/tmp/example", "owner/repo", [10], {})
+        issue = {"number": 10, "title": "First", "url": "https://github.com/owner/repo/issues/10", "state": "OPEN"}
+        merge = ticket_flow.build_task_specs(cfg, {10: issue})[-1]
+        self.assertIn("block for user merge confirmation", merge["body"])
+
+    def test_auto_merge_run_has_no_user_blocker(self):
+        cfg = ticket_flow.effective_config(
+            "/tmp/example",
+            "owner/repo",
+            [10],
+            {"pipeline": {"require_user_merge_confirmation": False}},
+        )
+        issue = {"number": 10, "title": "First", "url": "https://github.com/owner/repo/issues/10", "state": "OPEN"}
+        merge = ticket_flow.build_task_specs(cfg, {10: issue})[-1]
+        self.assertNotIn("block for user merge confirmation", merge["body"])
+        self.assertIn("merge automatically only after required GitHub checks pass", merge["body"])
+
+    def test_merge_checkpoint_setting_must_be_boolean(self):
+        with self.assertRaisesRegex(ValueError, "must be a boolean"):
+            ticket_flow.effective_config(
+                "/tmp/example",
+                "owner/repo",
+                [10],
+                {"pipeline": {"require_user_merge_confirmation": "no"}},
+            )
+
     def test_research_ahead_one_gates_third_research(self):
         cfg = ticket_flow.effective_config("/tmp/example", "owner/repo", [10, 20, 30], {})
         issues = {
