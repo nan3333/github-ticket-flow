@@ -3,7 +3,7 @@
 A user-level Hermes plugin that turns an ordered list of GitHub issues into a durable Kanban pipeline:
 
 ```text
-research → implementation/Ponytail → independent review → PR → user merge → verification/cleanup
+local analyst context → implementation/Ponytail → local analyst diff summary → independent review → PR → user merge → verification/cleanup
 ```
 
 ## Install
@@ -15,7 +15,7 @@ hermes plugins install nan3333/github-ticket-flow --enable
 Hermes profiles use isolated homes. Install the plugin for each worker profile that needs it:
 
 ```bash
-hermes -p researcher plugins install nan3333/github-ticket-flow --enable
+hermes -p analyst plugins install nan3333/github-ticket-flow --enable
 hermes -p implementer plugins install nan3333/github-ticket-flow --enable
 hermes -p reviewer plugins install nan3333/github-ticket-flow --enable
 ```
@@ -32,7 +32,7 @@ hermes ticket-flow status
 hermes ticket-flow detach --board <board> --yes
 ```
 
-The plugin infers the repository root and `owner/repo` from Git. Standard repositories require no workflow configuration.
+The plugin infers the repository root and `owner/repo` from Git. Standard repositories require no workflow configuration. The default `analyst` profile performs the read-only context and diff-summary passes; `implementer` remains the only writer and `reviewer` remains the independent approval authority.
 
 The default run stops at each PR for user merge confirmation. For an autonomous run, `--auto-merge` keeps independent review and final gates but lets the merge card merge after required GitHub checks pass and the approved head/digest are unchanged. The selected policy is recorded in the run manifest.
 
@@ -51,6 +51,8 @@ gates:
 ```
 
 Supported top-level override keys are `roles`, `pipeline`, `worktrees`, `stage_skills`, and `gates`. Issue numbers, repository identity, workflow ID, board slug, and project path are inferred per run rather than stored in the repository.
+
+Role defaults are `analyst`, `implementer`, `reviewer`, and `default` for merge verification. `roles.analyst` may point to another read-only profile. The legacy `roles.researcher` key remains accepted for compatibility but is no longer assigned by the default graph.
 
 Each successful start writes the complete effective configuration and card IDs to `ticket-flow-manifest.json` beside the board database.
 

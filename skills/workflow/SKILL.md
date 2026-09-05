@@ -1,7 +1,7 @@
 ---
 name: workflow
 description: Run durable, serialized GitHub ticket delivery.
-version: 1.1.0
+version: 1.2.0
 author: f, Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -29,19 +29,23 @@ Do not use it to bypass card dependencies, work on an unlisted issue, or merge a
 
 ## Stage Contracts
 
-### Research
+### Analyst context packet
 
 Remain read-only. Do not create or edit files, branches, commits, or pull requests.
 
-Inspect issue scope, linked work, owner modules, callers, tests, migrations, repository rules, and current behavior. Complete with metadata conforming to `references/research-handoff.schema.json`, including the exact `origin/main` SHA researched.
+Inspect issue scope, linked work, owner modules, callers, tests, migrations, repository rules, and current behavior. Cite code claims with exact paths and lines, and separate facts, hypotheses, open questions, risks, and suggested tests. Complete with metadata conforming to `references/research-handoff.schema.json`, including the exact `origin/main` SHA researched. This packet informs implementation but is not authoritative.
 
-### Delivery and review
+### Delivery, analyst pass, and review
 
 The implementer is the sole writer in the generated worktree. Revalidate the research handoff against current `origin/main`; stale or contradicted research returns to research instead of being guessed around.
 
 Follow test-driven development. Apply Ponytail `full` to reuse existing owners and produce the smallest correct diff. Minimalism must not weaken acceptance criteria, financial or tenancy correctness, validation, error handling, security, accessibility, migrations, public behavior, or required tests. Do not perform unrelated cleanup.
 
-Keep the candidate uncommitted. Compute a deterministic diff digest and request same-card review from the configured reviewer. The reviewer is read-only and verifies the exact worktree, issue, tests, and digest. Any edit invalidates approval and requires a fresh review. Approval completes the delivery card with metadata conforming to `references/review-handoff.schema.json`.
+Keep the candidate uncommitted. Compute a deterministic diff digest, then launch the configured analyst profile as a read-only one-shot subprocess in the exact worktree. Supply the issue, expected digest, changed files, and test evidence.
+
+The analyst recomputes the digest before and after inspection and produces an advisory summary of changed behavior, owner/caller impact, tests, scope surprises, potential omissions, and review hotspots. The analyst must not approve or reject. Its response must conform to `references/diff-analysis-handoff.schema.json`. If the analyst fails or observes a moving digest, block with the concrete error rather than skipping the pass.
+
+Include the complete analyst advisory when requesting same-card review from the configured reviewer. The reviewer remains read-only and independently verifies the exact worktree, issue, research packet, complete diff, tests, and digest. The analyst summary is advisory and must not substitute for review. Any edit invalidates both the analysis and approval and requires the full implementer → analyst → reviewer sequence again. Approval completes the delivery card with metadata conforming to `references/review-handoff.schema.json`.
 
 ### Finalize and merge
 
@@ -69,7 +73,7 @@ Do not release the next delivery before this stage completes.
 
 - GitHub remains authoritative; do not mirror or rewrite issue scope in Kanban.
 - Research may run ahead, but delivery and open-PR work remain WIP 1.
-- One writer per worktree. Researchers and reviewers never edit.
+- One writer per worktree. Analysts and reviewers never edit.
 - Never weaken a failing gate or delete another agent's work to obtain green output.
 - In manual mode, a user saying “merged” starts independent verification; it is not itself proof of merge.
 

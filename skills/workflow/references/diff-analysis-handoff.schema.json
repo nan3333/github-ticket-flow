@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ticket diff analysis advisory",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "github_issue",
+    "worktree_path",
+    "expected_diff_digest",
+    "observed_diff_digest",
+    "digest_stable",
+    "changed_files",
+    "behavior_summary",
+    "owner_caller_impact",
+    "tests",
+    "scope_surprises",
+    "potential_omissions",
+    "review_hotspots",
+    "authority"
+  ],
+  "properties": {
+    "github_issue": {"type": "integer", "minimum": 1},
+    "worktree_path": {"type": "string"},
+    "expected_diff_digest": {"type": "string"},
+    "observed_diff_digest": {"type": "string"},
+    "digest_stable": {"const": true},
+    "changed_files": {"type": "array", "items": {"type": "string"}},
+    "behavior_summary": {"type": "array", "items": {"type": "string"}},
+    "owner_caller_impact": {"type": "array", "items": {"type": "string"}},
+    "tests": {"type": "array", "items": {"type": "string"}},
+    "scope_surprises": {"type": "array", "items": {"type": "string"}},
+    "potential_omissions": {"type": "array", "items": {"type": "string"}},
+    "review_hotspots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "line", "reason"],
+        "properties": {
+          "path": {"type": "string"},
+          "line": {"type": ["integer", "null"]},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "authority": {"const": "advisory-only"}
+  }
+}

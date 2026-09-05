@@ -20,6 +20,7 @@ PLUGIN_SKILL = "github-ticket-flow:workflow"
 STAGES = ("research", "delivery", "merge")
 DEFAULTS: dict[str, Any] = {
     "roles": {
+        "analyst": "analyst",
         "researcher": "researcher",
         "implementer": "implementer",
         "reviewer": "reviewer",
@@ -99,7 +100,7 @@ def validate_config(config: dict[str, Any]) -> None:
     if not isinstance(repo, str) or repo.count("/") != 1:
         raise ValueError("repository must be owner/repo")
     roles = config.get("roles", {})
-    for role in ("researcher", "implementer", "reviewer", "merge_verifier"):
+    for role in ("analyst", "researcher", "implementer", "reviewer", "merge_verifier"):
         if not isinstance(roles.get(role), str) or not roles[role].strip():
             raise ValueError(f"roles.{role} must be a profile name")
     research_ahead = config.get("pipeline", {}).get("research_ahead", 1)
@@ -184,15 +185,24 @@ def _body(config: dict[str, Any], issue: dict[str, Any], stage: str) -> str:
         return common + (
             "Stage: RESEARCH. Read-only: do not edit files, create branches, commit, push, or open a PR. "
             "Inspect the current issue and comments, linked PRs, origin/main, owner symbols, callers, tests, and project rules. "
-            "Complete with metadata matching `references/research-handoff.schema.json`, including the exact researched base SHA."
+            "Produce an evidence-backed implementation context packet with path-and-line citations. Separate verified facts, hypotheses, "
+            "open questions, risks, and suggested tests. Complete with metadata matching `references/research-handoff.schema.json`, "
+            "including the exact researched base SHA."
         )
     if stage == "delivery":
+        analyst = config["roles"]["analyst"]
         reviewer = config["roles"]["reviewer"]
         return common + (
-            "Stage: DELIVERY. You are the sole writer. Validate the research parent against current origin/main, follow TDD, "
-            "and apply Ponytail full for the smallest correct diff without weakening requirements or safety. Keep the candidate uncommitted. "
-            f"Request same-card review from `{reviewer}` with the worktree, changed files, tests, and deterministic diff digest. "
-            "The reviewer is read-only; edits invalidate approval. Approval must preserve worktree and digest metadata."
+            "Stage: DELIVERY_WITH_ANALYSIS_AND_REVIEW. You are the sole writer. Validate the research parent against current origin/main, "
+            "follow TDD, and apply Ponytail full for the smallest correct diff without weakening requirements or safety. Keep the candidate "
+            f"uncommitted and compute the deterministic diff digest. Before review, launch a read-only `{analyst} chat` pass in the exact "
+            "worktree, giving it the issue, expected digest, changed files, and tests. Require it to recompute the digest before and after "
+            "inspection and return advisory metadata matching `references/diff-analysis-handoff.schema.json`: changed behavior, owner/caller "
+            "impact, tests, scope surprises, potential omissions, and review hotspots with path-and-line evidence. The analyst must not approve "
+            f"or reject. If the analyst fails or the digest moves, block with the concrete error; do not skip the pass. Then request same-card review from `{reviewer}` "
+            "with the worktree, digest, test evidence, and complete analyst advisory. The reviewer is read-only and independently verifies the "
+            "issue, research packet, diff, tests, and digest; the analyst advisory is non-authoritative. Any edit invalidates both analysis and "
+            "approval and requires a fresh analyst pass before re-review. Approval must preserve worktree and digest metadata."
         )
     gates = "\n".join(f"- `{gate}`" for gate in config.get("gates", {}).get("final", []))
     if config["pipeline"]["require_user_merge_confirmation"]:
@@ -237,7 +247,7 @@ def build_task_specs(config: dict[str, Any], issues: dict[int, dict[str, Any]]) 
                     "stage": "research",
                     "title": f"Research GitHub #{number}: {issue['title']}",
                     "body": _body(config, issue, "research"),
-                    "assignee": config["roles"]["researcher"],
+                    "assignee": config["roles"]["analyst"],
                     "parents": research_parents,
                     "workspace": f"dir:{path}",
                     "branch": None,

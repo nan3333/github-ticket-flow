@@ -21,6 +21,7 @@ class TicketFlowPluginTests(unittest.TestCase):
         )
         self.assertEqual(cfg["workflow_id"], "repo-191-154-156")
         self.assertEqual(cfg["board"], "repo-ticket-flow-191-154-156")
+        self.assertEqual(cfg["roles"]["analyst"], "analyst")
         self.assertEqual(cfg["roles"]["implementer"], "implementer")
         self.assertEqual(cfg["pipeline"]["research_ahead"], 1)
         self.assertEqual(cfg["stage_skills"]["delivery"], ["ponytail"])
@@ -35,6 +36,31 @@ class TicketFlowPluginTests(unittest.TestCase):
         self.assertEqual(cfg["roles"]["researcher"], "researcher")
         self.assertEqual(cfg["roles"]["reviewer"], "security-reviewer")
         self.assertEqual(cfg["gates"]["final"], ["make verify"])
+
+    def test_analyst_builds_context_then_triages_diff_before_reviewer(self):
+        cfg = ticket_flow.effective_config("/tmp/example", "owner/repo", [10], {})
+        issue = {"number": 10, "title": "First", "url": "https://github.com/owner/repo/issues/10", "state": "OPEN"}
+        tasks = ticket_flow.build_task_specs(cfg, {10: issue})
+        by_stage = {task["stage"]: task for task in tasks}
+
+        self.assertEqual(by_stage["research"]["assignee"], "analyst")
+        self.assertIn("implementation context packet", by_stage["research"]["body"])
+        self.assertIn("launch a read-only `analyst chat` pass", by_stage["delivery"]["body"])
+        self.assertIn("request same-card review from `reviewer`", by_stage["delivery"]["body"])
+        self.assertIn("diff-analysis-handoff.schema.json", by_stage["delivery"]["body"])
+        self.assertLess(
+            by_stage["delivery"]["body"].index("launch a read-only `analyst chat` pass"),
+            by_stage["delivery"]["body"].index("request same-card review from `reviewer`"),
+        )
+
+    def test_analyst_role_must_be_configured(self):
+        with self.assertRaisesRegex(ValueError, "roles.analyst"):
+            ticket_flow.effective_config(
+                "/tmp/example",
+                "owner/repo",
+                [10],
+                {"roles": {"analyst": ""}},
+            )
 
     def test_delivery_cards_bundle_plugin_skill_and_ponytail(self):
         cfg = ticket_flow.effective_config("/tmp/example", "owner/repo", [10], {})
