@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ticket merge verification",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["github_issue", "pull_request", "expected_head_sha", "merged", "merge_commit", "base_updated", "main_clean", "worktree_reaped"],
+  "properties": {
+    "github_issue": {"type": "integer", "minimum": 1},
+    "pull_request": {"type": "string", "format": "uri"},
+    "expected_head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "merged": {"const": true},
+    "merge_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "base_updated": {"const": true},
+    "main_clean": {"const": true},
+    "worktree_reaped": {"const": true}
+  }
+}

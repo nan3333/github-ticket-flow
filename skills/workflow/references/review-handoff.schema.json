@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ticket review approval",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["github_issue", "worktree_path", "reviewed_diff_digest", "spec_verdict", "quality_verdict", "findings"],
+  "properties": {
+    "github_issue": {"type": "integer", "minimum": 1},
+    "worktree_path": {"type": "string"},
+    "reviewed_diff_digest": {"type": "string"},
+    "spec_verdict": {"enum": ["pass", "fail"]},
+    "quality_verdict": {"enum": ["approved", "request_changes"]},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "path", "line", "requirement", "evidence"],
+        "properties": {
+          "severity": {"enum": ["critical", "important", "minor"]},
+          "path": {"type": "string"},
+          "line": {"type": ["integer", "null"]},
+          "requirement": {"type": "string"},
+          "evidence": {"type": "string"}
+        }
+      }
+    }
+  }
+}
