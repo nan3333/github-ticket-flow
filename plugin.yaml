@@ -4,7 +4,7 @@ api_version: 1
 description: Durable GitHub issue delivery through Hermes Kanban
 kind: standalone
 author: nan3333, Hermes Agent
-license: MIT
+license: Apache-2.0
 homepage: https://github.com/nan3333/github-ticket-flow
 platforms: [linux, macos, windows]
 tags: [github, kanban, orchestration, worktrees, review]

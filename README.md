@@ -65,3 +65,7 @@ python3 tests/test_ticket_flow.py -v
 python3 tests/test_cli.py -v
 hermes plugins doctor . --ci
 ```
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
