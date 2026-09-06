@@ -1,5 +1,5 @@
 name: github-ticket-flow
-version: 1.2.0
+version: 1.2.1
 api_version: 1
 description: Durable GitHub issue delivery through Hermes Kanban
 kind: standalone

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -36,6 +37,12 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     detach.add_argument("--board", required=True, help="Board slug to archive")
     detach.add_argument("--yes", action="store_true", help="Confirm archival")
     detach.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+
+    analyst_pass = subs.add_parser("analyst-pass", help="Run an analyst without the caller's Kanban identity")
+    analyst_pass.add_argument("--profile", required=True, help="Read-only analyst profile")
+    analyst_pass.add_argument("--worktree", required=True, help="Exact candidate worktree")
+    analyst_pass.add_argument("--query-file", required=True, help="Analyst instructions file")
+    analyst_pass.add_argument("--max-turns", type=int, default=40, help="Analyst turn budget")
 
     parser.set_defaults(func=ticket_flow_command)
 
@@ -127,6 +134,42 @@ def _detach(args: argparse.Namespace) -> int:
     return 0
 
 
+def _analyst_pass(args: argparse.Namespace) -> int:
+    worktree = pathlib.Path(args.worktree).resolve()
+    query_file = pathlib.Path(args.query_file).resolve()
+    if not worktree.is_dir():
+        raise ValueError(f"analyst worktree is not a directory: {worktree}")
+    if not query_file.is_file():
+        raise ValueError(f"analyst query file does not exist: {query_file}")
+    if args.max_turns < 1:
+        raise ValueError("analyst max-turns must be positive")
+
+    env = {key: value for key, value in os.environ.items() if not key.startswith("HERMES_KANBAN_")}
+    env["HERMES_DELEGATED_CHILD_CONTEXT"] = "1"
+    completed = subprocess.run(
+        [
+            "hermes",
+            "-p",
+            args.profile,
+            "--in",
+            str(worktree),
+            "chat",
+            "--oneshot",
+            "--query-file",
+            str(query_file),
+            "--max-turns",
+            str(args.max_turns),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+        cwd=str(worktree),
+        env=env,
+    )
+    print(completed.stdout, end="")
+    return 0
+
+
 def ticket_flow_command(args: argparse.Namespace) -> int:
     action = getattr(args, "ticket_flow_action", None)
     try:
@@ -136,7 +179,9 @@ def ticket_flow_command(args: argparse.Namespace) -> int:
             return _status(args)
         if action == "detach":
             return _detach(args)
-        print("Usage: hermes ticket-flow {start|status|detach}", file=sys.stderr)
+        if action == "analyst-pass":
+            return _analyst_pass(args)
+        print("Usage: hermes ticket-flow {start|status|detach|analyst-pass}", file=sys.stderr)
         return 2
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError, subprocess.CalledProcessError) as exc:
         detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) and exc.stderr else str(exc)

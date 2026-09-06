@@ -34,6 +34,17 @@ hermes ticket-flow detach --board <board> --yes
 
 The plugin infers the repository root and `owner/repo` from Git. Standard repositories require no workflow configuration. The default `analyst` profile performs the read-only context and diff-summary passes; `implementer` remains the only writer and `reviewer` remains the independent approval authority.
 
+Delivery workers launch the diff-summary pass through the plugin's isolation wrapper:
+
+```bash
+hermes ticket-flow analyst-pass \
+  --profile analyst \
+  --worktree /absolute/path/to/candidate-worktree \
+  --query-file /absolute/path/to/analyst-instructions.md
+```
+
+The wrapper removes every inherited `HERMES_KANBAN_*` variable and marks the subprocess as a delegated child. This prevents an advisory analyst from inheriting, completing, blocking, or otherwise mutating the implementer's Kanban card. Do not replace the wrapper with a direct `hermes -p analyst chat` call from inside a Kanban worker.
+
 The default run stops at each PR for user merge confirmation. For an autonomous run, `--auto-merge` keeps independent review and final gates but lets the merge card merge after required GitHub checks pass and the approved head/digest are unchanged. The selected policy is recorded in the run manifest.
 
 Use the flag for a single run. To make autonomous merge the repository default, set `pipeline.require_user_merge_confirmation: false` in `.hermes/ticket-flow.yaml`; a run without the flag otherwise remains manual.

@@ -45,11 +45,11 @@ class TicketFlowPluginTests(unittest.TestCase):
 
         self.assertEqual(by_stage["research"]["assignee"], "analyst")
         self.assertIn("implementation context packet", by_stage["research"]["body"])
-        self.assertIn("launch a read-only `analyst chat` pass", by_stage["delivery"]["body"])
+        self.assertIn("hermes ticket-flow analyst-pass", by_stage["delivery"]["body"])
         self.assertIn("request same-card review from `reviewer`", by_stage["delivery"]["body"])
         self.assertIn("diff-analysis-handoff.schema.json", by_stage["delivery"]["body"])
         self.assertLess(
-            by_stage["delivery"]["body"].index("launch a read-only `analyst chat` pass"),
+            by_stage["delivery"]["body"].index("hermes ticket-flow analyst-pass"),
             by_stage["delivery"]["body"].index("request same-card review from `reviewer`"),
         )
 

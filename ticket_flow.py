@@ -195,8 +195,10 @@ def _body(config: dict[str, Any], issue: dict[str, Any], stage: str) -> str:
         return common + (
             "Stage: DELIVERY_WITH_ANALYSIS_AND_REVIEW. You are the sole writer. Validate the research parent against current origin/main, "
             "follow TDD, and apply Ponytail full for the smallest correct diff without weakening requirements or safety. Keep the candidate "
-            f"uncommitted and compute the deterministic diff digest. Before review, launch a read-only `{analyst} chat` pass in the exact "
-            "worktree, giving it the issue, expected digest, changed files, and tests. Require it to recompute the digest before and after "
+            "uncommitted and compute the deterministic diff digest. Before review, write an analyst query file containing the issue, expected "
+            f"digest, changed files, and tests, then run `hermes ticket-flow analyst-pass --profile {analyst} --worktree <exact-worktree> "
+            "--query-file <query-file>`. Never launch the analyst with `hermes -p ... chat` directly from a Kanban worker because that leaks "
+            "the caller's task identity. Require the analyst to recompute the digest before and after "
             "inspection and return advisory metadata matching `references/diff-analysis-handoff.schema.json`: changed behavior, owner/caller "
             "impact, tests, scope surprises, potential omissions, and review hotspots with path-and-line evidence. The analyst must not approve "
             f"or reject. If the analyst fails or the digest moves, block with the concrete error; do not skip the pass. Then request same-card review from `{reviewer}` "

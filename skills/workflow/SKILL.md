@@ -1,7 +1,7 @@
 ---
 name: workflow
 description: Run durable, serialized GitHub ticket delivery.
-version: 1.2.0
+version: 1.2.1
 author: f, Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -41,7 +41,7 @@ The implementer is the sole writer in the generated worktree. Revalidate the res
 
 Follow test-driven development. Apply Ponytail `full` to reuse existing owners and produce the smallest correct diff. Minimalism must not weaken acceptance criteria, financial or tenancy correctness, validation, error handling, security, accessibility, migrations, public behavior, or required tests. Do not perform unrelated cleanup.
 
-Keep the candidate uncommitted. Compute a deterministic diff digest, then launch the configured analyst profile as a read-only one-shot subprocess in the exact worktree. Supply the issue, expected digest, changed files, and test evidence.
+Keep the candidate uncommitted. Compute a deterministic diff digest, write the analyst instructions to a query file, then launch the configured profile through `hermes ticket-flow analyst-pass --profile <analyst> --worktree <exact-worktree> --query-file <query-file>`. The wrapper strips the caller's Kanban identity and denies the delegated subprocess board mutations. Never call `hermes -p <analyst> chat` directly from a Kanban worker. Supply the issue, expected digest, changed files, and test evidence.
 
 The analyst recomputes the digest before and after inspection and produces an advisory summary of changed behavior, owner/caller impact, tests, scope surprises, potential omissions, and review hotspots. The analyst must not approve or reject. Its response must conform to `references/diff-analysis-handoff.schema.json`. If the analyst fails or observes a moving digest, block with the concrete error rather than skipping the pass.
 
