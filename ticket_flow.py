@@ -30,11 +30,29 @@ DEFAULTS: dict[str, Any] = {
         "require_previous_merge": True,
         "require_user_merge_confirmation": True,
     },
+    "execution": {
+        "runner": "hermes",
+        "poll_interval_seconds": 2,
+        "max_spawn": 4,
+    },
     "worktrees": {"branch_template": "agent/issue-{issue}"},
     "stage_skills": {"research": [], "delivery": ["ponytail"], "merge": []},
     "gates": {"final": ["hermes verify --json"]},
+    "parallelization": {
+        "research": {"max_workers": 3},
+        "review": {"max_workers": 3},
+        "tests": {"max_workers": 2, "final_gate_groups": []},
+    },
 }
-ALLOWED_OVERRIDE_KEYS = {"roles", "pipeline", "worktrees", "stage_skills", "gates"}
+ALLOWED_OVERRIDE_KEYS = {
+    "roles",
+    "pipeline",
+    "execution",
+    "worktrees",
+    "stage_skills",
+    "gates",
+    "parallelization",
+}
 
 
 def run(argv: list[str], *, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -108,6 +126,15 @@ def validate_config(config: dict[str, Any]) -> None:
     require_user_merge_confirmation = config.get("pipeline", {}).get("require_user_merge_confirmation", True)
     if not isinstance(require_user_merge_confirmation, bool):
         raise ValueError("pipeline.require_user_merge_confirmation must be a boolean")
+    execution = config.get("execution", {})
+    if execution.get("runner") not in {"hermes", "herdr"}:
+        raise ValueError("execution.runner must be hermes or herdr")
+    poll_interval = execution.get("poll_interval_seconds")
+    if isinstance(poll_interval, bool) or not isinstance(poll_interval, int) or not 1 <= poll_interval <= 60:
+        raise ValueError("execution.poll_interval_seconds must be an integer from 1 to 60")
+    max_spawn = execution.get("max_spawn")
+    if isinstance(max_spawn, bool) or not isinstance(max_spawn, int) or not 1 <= max_spawn <= 16:
+        raise ValueError("execution.max_spawn must be an integer from 1 to 16")
     branch = config.get("worktrees", {}).get("branch_template", "")
     if "{issue}" not in branch:
         raise ValueError("worktrees.branch_template must contain {issue}")
@@ -117,6 +144,37 @@ def validate_config(config: dict[str, Any]) -> None:
     gates = config.get("gates", {}).get("final", [])
     if not isinstance(gates, list) or not all(isinstance(gate, str) and gate.strip() for gate in gates):
         raise ValueError("gates.final must be a list of commands")
+    parallelization = config.get("parallelization", {})
+    if not isinstance(parallelization, dict):
+        raise ValueError("parallelization must be an object")
+    for lane in ("research", "review", "tests"):
+        settings = parallelization.get(lane)
+        if not isinstance(settings, dict):
+            raise ValueError(f"parallelization.{lane} must be an object")
+        max_workers = settings.get("max_workers")
+        if isinstance(max_workers, bool) or not isinstance(max_workers, int) or not 1 <= max_workers <= 4:
+            raise ValueError(f"parallelization.{lane}.max_workers must be an integer from 1 to 4")
+    groups = parallelization["tests"].get("final_gate_groups", [])
+    if not isinstance(groups, list) or not all(
+        isinstance(group, list)
+        and group
+        and all(isinstance(command, str) and command.strip() for command in group)
+        for group in groups
+    ):
+        raise ValueError("parallelization.tests.final_gate_groups must be a list of non-empty command lists")
+    flattened = [command for group in groups for command in group]
+    max_test_workers = parallelization["tests"]["max_workers"]
+    if any(len(group) > max_test_workers for group in groups):
+        raise ValueError("parallel final gate group exceeds parallelization.tests.max_workers")
+    seen: set[str] = set()
+    for command in flattened:
+        if command not in gates:
+            raise ValueError(f"parallel final gate is not declared in gates.final: {command}")
+        if command in seen:
+            raise ValueError(f"parallel final gate is duplicated: {command}")
+        seen.add(command)
+    if flattened != gates[: len(flattened)]:
+        raise ValueError("parallel final gate groups must match a prefix of gates.final")
 
 
 def load_optional_config(path: str | pathlib.Path) -> dict[str, Any]:
@@ -172,6 +230,47 @@ def _stage_skills(config: dict[str, Any], stage: str) -> list[str]:
     return list(dict.fromkeys([PLUGIN_SKILL, *extras]))
 
 
+def _test_parallelism_contract(config: dict[str, Any]) -> str:
+    max_workers = config["parallelization"]["tests"]["max_workers"]
+    return (
+        f"Run up to {max_workers} independent test commands concurrently using parallel tool calls, not shell background jobs. "
+        "Parallel commands must never share a database or build output directory; serialize any commands that do. "
+        "Capture each exact command and exit status, and treat any failure as a failed batch rather than hiding it with a rerun."
+    )
+
+
+def _delegation_contract(config: dict[str, Any], lane: str, profile: str) -> str:
+    max_workers = config["parallelization"][lane]["max_workers"]
+    if config["execution"]["runner"] == "herdr":
+        return (
+            f"When independent work exists, create a Herdr delegation spec JSON with profile `{profile}` and a `lenses` array of up to "
+            f"{max_workers} objects shaped as `{{\"name\": \"short-name\", \"prompt\": \"self-contained task\"}}`, then run "
+            "`hermes -p default ticket-flow herdr-delegate --spec <absolute-path>`. Start one batch only: the command launches every lens concurrently "
+            "in named, visible Herdr tabs and returns their reports. Do not use `delegate_task`. Give every lens the exact repository, issue, base "
+            "SHA or diff digest, and read-only constraint; lenses do not call Kanban lifecycle tools. "
+        )
+    return (
+        f"When independent work exists, use `delegate_task` once to fan out one batch of up to {max_workers} read-only {lane} lenses. "
+        "Give every lens the exact repository, issue, base SHA or diff digest, and read-only constraint; lenses do not call Kanban lifecycle tools. "
+    )
+
+
+def _final_gate_plan(config: dict[str, Any]) -> str:
+    gates = config.get("gates", {}).get("final", [])
+    tests = config["parallelization"]["tests"]
+    groups = tests["final_gate_groups"]
+    max_workers = tests["max_workers"]
+    lines = ["Final-gate execution plan:"]
+    for index, group in enumerate(groups, start=1):
+        lines.append(f"Parallel final-gate group {index} (maximum {max_workers} concurrent commands):")
+        lines.extend(f"- `{command}`" for command in group)
+    serial = gates[sum(len(group) for group in groups) :]
+    if serial:
+        lines.append("Serial final gates, in order:")
+        lines.extend(f"{index}. `{command}`" for index, command in enumerate(serial, start=1))
+    return "\n".join(lines)
+
+
 def _body(config: dict[str, Any], issue: dict[str, Any], stage: str) -> str:
     common = (
         f"Workflow: {config['workflow_id']}\n"
@@ -184,6 +283,9 @@ def _body(config: dict[str, Any], issue: dict[str, Any], stage: str) -> str:
         return common + (
             "Stage: RESEARCH. Read-only: do not edit files, create branches, commit, push, or open a PR. "
             "Inspect the current issue and comments, linked PRs, origin/main, owner symbols, callers, tests, and project rules. "
+            + _delegation_contract(config, "research", config["roles"]["researcher"])
+            + "Use lenses covering issue/history, code ownership/callers, and tests/risks. The parent researcher owns synthesis: verify cited evidence, reconcile conflicts, "
+            "and emit one handoff without treating child summaries as proof. "
             "Complete with metadata matching `references/research-handoff.schema.json`, including the exact researched base SHA."
         )
     if stage == "delivery":
@@ -191,10 +293,15 @@ def _body(config: dict[str, Any], issue: dict[str, Any], stage: str) -> str:
         return common + (
             "Stage: DELIVERY. You are the sole writer. Validate the research parent against current origin/main, follow TDD, "
             "and apply Ponytail full for the smallest correct diff without weakening requirements or safety. Keep the candidate uncommitted. "
+            + _test_parallelism_contract(config)
+            + " "
             f"Request same-card review from `{reviewer}` with the worktree, changed files, tests, and deterministic diff digest. "
-            "The reviewer is read-only; edits invalidate approval. Approval must preserve worktree and digest metadata."
+            "The reviewer is read-only. "
+            + _delegation_contract(config, "review", reviewer)
+            + "Use lenses for requirements/domain correctness, security/tenancy, and tests/regressions. Every lens inspects the same exact diff digest and cannot edit or "
+            "call Kanban lifecycle tools. The parent reviewer verifies findings and alone owns the verdict. Edits invalidate approval. Approval must preserve "
+            "worktree and digest metadata."
         )
-    gates = "\n".join(f"- `{gate}`" for gate in config.get("gates", {}).get("final", []))
     if config["pipeline"]["require_user_merge_confirmation"]:
         merge_policy = (
             "then block for user merge confirmation. Put the PR URL in block metadata/summary, never an ordinary comment. "
@@ -206,10 +313,11 @@ def _body(config: dict[str, Any], issue: dict[str, Any], stage: str) -> str:
             "and reviewer approval is still valid. Use a repository-permitted merge method and independently verify the expected head merged"
         )
     return common + (
-        "Stage: FINALIZE_AND_MERGE. Verify the approved digest, run every final gate below, commit atomically, push, open and read back "
+        "Stage: FINALIZE_AND_MERGE. Verify the approved digest. "
+        "Run every final gate according to the explicit plan below, then commit atomically, push, open and read back "
         f"a PR containing `Closes #N`, {merge_policy}, synchronize clean main, reap the worktree and branches, "
-        "and complete with `references/merge-handoff.schema.json`. Do not release the next delivery before this.\n\nFinal gates:\n"
-        + gates
+        "and complete with `references/merge-handoff.schema.json`. Do not release the next delivery before this.\n\n"
+        + _final_gate_plan(config)
     )
 
 

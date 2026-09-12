@@ -1,7 +1,7 @@
 ---
 name: workflow
 description: Run durable, serialized GitHub ticket delivery.
-version: 1.1.0
+version: 1.3.0
 author: f, Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -29,9 +29,17 @@ Do not use it to bypass card dependencies, work on an unlisted issue, or merge a
 
 ## Stage Contracts
 
+### Herdr execution
+
+When `HERMES_HERDR_WORKSPACE_ID` and `HERMES_HERDR_PANE_ID` are present, this card runs in a named Herdr workspace. Keep those identifiers in completion metadata. The ticket-flow runner also records them as a structured task comment so operators can focus the exact workspace. This baseline requires local Herdr panes that share the repository filesystem.
+
+For nested evidence lenses, follow the card body's Herdr delegation contract: write its JSON spec and run `hermes -p default ticket-flow herdr-delegate --spec <absolute-path>`. The default profile owns the shared runner CLI even when the card uses another worker profile. The command starts every lens concurrently in a named Herdr tab, waits for their reports, and prints one aggregate result. Do not use `delegate_task` on a Herdr-backed card. The delegated panes intentionally receive no Kanban task identity.
+
 ### Research
 
 Remain read-only. Do not create or edit files, branches, commits, or pull requests.
+
+When the task context enables bounded in-lane parallelism, use the delegation mechanism named in the card body for one batch up to its configured bound, choosing independent lenses from issue/history, code/callers, and tests/risks. Give every child the exact repository, issue, researched base SHA, and read-only constraint. Children never call Kanban lifecycle tools. Verify their cited evidence and reconcile conflicts yourself; child summaries are leads, not proof. The parent researcher emits the only research handoff.
 
 Inspect issue scope, linked work, owner modules, callers, tests, migrations, repository rules, and current behavior. Complete with metadata conforming to `references/research-handoff.schema.json`, including the exact `origin/main` SHA researched.
 
@@ -43,9 +51,15 @@ Follow test-driven development. Apply Ponytail `full` to reuse existing owners a
 
 Keep the candidate uncommitted. Compute a deterministic diff digest and request same-card review from the configured reviewer. The reviewer is read-only and verifies the exact worktree, issue, tests, and digest. Any edit invalidates approval and requires a fresh review. Approval completes the delivery card with metadata conforming to `references/review-handoff.schema.json`.
 
+When the task context enables bounded review parallelism, the parent reviewer uses the delegation mechanism named in the card body for one batch up to its configured bound, choosing independent lenses from requirements/domain, security/tenancy, and tests/regressions. Every child receives and inspects the same exact digest, remains read-only, and cannot call Kanban lifecycle tools. The parent reviewer verifies each finding and alone requests changes or approves.
+
+Run independent test commands concurrently only within the task body's configured worker limit. Use parallel tool calls rather than shell background jobs, preserve each command's output and exit status, and fail the batch if any command fails. Never parallelize commands that share a database, server, mutable fixture, cache, or build output directory.
+
 ### Finalize and merge
 
 Read the approved delivery handoff and verify its worktree and digest are unchanged. Run every final gate listed in the card body. If a substantive failure requires an edit, route it through implementer rework and independent re-review before proceeding.
+
+Follow the card's explicit final-gate execution plan. Only configured groups may run concurrently; run groups and remaining serial gates in the displayed order. A parallel group succeeds only when every command succeeds independently.
 
 Commit atomically, push the expected branch, open a pull request containing `Closes #N`, and read the pull request back to verify base, head, SHA, body, and checks. Then follow the merge policy in the effective task body:
 
@@ -70,6 +84,8 @@ Do not release the next delivery before this stage completes.
 - GitHub remains authoritative; do not mirror or rewrite issue scope in Kanban.
 - Research may run ahead, but delivery and open-PR work remain WIP 1.
 - One writer per worktree. Researchers and reviewers never edit.
+- Delegated lenses never own task lifecycle, synthesize the final handoff, or substitute their summaries for verified evidence.
+- Concurrency never crosses a shared database, mutable fixture, dev server, cache, or build-output boundary.
 - Never weaken a failing gate or delete another agent's work to obtain green output.
 - In manual mode, a user saying “merged” starts independent verification; it is not itself proof of merge.
 

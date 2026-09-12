@@ -24,6 +24,11 @@ class TicketFlowPluginTests(unittest.TestCase):
         self.assertEqual(cfg["roles"]["implementer"], "implementer")
         self.assertEqual(cfg["pipeline"]["research_ahead"], 1)
         self.assertEqual(cfg["stage_skills"]["delivery"], ["ponytail"])
+        self.assertEqual(cfg["parallelization"]["research"]["max_workers"], 3)
+        self.assertEqual(cfg["parallelization"]["review"]["max_workers"], 3)
+        self.assertEqual(cfg["parallelization"]["tests"]["max_workers"], 2)
+        self.assertEqual(cfg["parallelization"]["tests"]["final_gate_groups"], [])
+        self.assertEqual(cfg["execution"]["runner"], "hermes")
 
     def test_optional_config_deep_merges_repo_overrides(self):
         cfg = ticket_flow.effective_config(
@@ -87,6 +92,148 @@ class TicketFlowPluginTests(unittest.TestCase):
         self.assertEqual(by_key["research-20"]["parents"], [])
         self.assertEqual(by_key["research-30"]["parents"], ["merge-10"])
         self.assertEqual(by_key["delivery-20"]["parents"], ["research-20", "merge-10"])
+
+    def test_stage_bodies_define_bounded_in_lane_parallelism(self):
+        cfg = ticket_flow.effective_config("/tmp/example", "owner/repo", [10], {})
+        issue = {"number": 10, "title": "First", "url": "https://github.com/owner/repo/issues/10", "state": "OPEN"}
+        by_stage = {task["stage"]: task for task in ticket_flow.build_task_specs(cfg, {10: issue})}
+
+        self.assertIn("one batch of up to 3 read-only research lenses", by_stage["research"]["body"])
+        self.assertIn("The parent researcher owns synthesis", by_stage["research"]["body"])
+        self.assertIn("one batch of up to 3 read-only review lenses", by_stage["delivery"]["body"])
+        self.assertIn("same exact diff digest", by_stage["delivery"]["body"])
+        self.assertIn("up to 2 independent test commands", by_stage["delivery"]["body"])
+        self.assertIn("never share a database or build output directory", by_stage["delivery"]["body"])
+
+    def test_herdr_stage_bodies_externalize_research_and_review_lenses(self):
+        cfg = ticket_flow.effective_config(
+            "/tmp/example",
+            "owner/repo",
+            [10],
+            {"execution": {"runner": "herdr"}},
+        )
+        issue = {"number": 10, "title": "First", "url": "https://github.com/owner/repo/issues/10", "state": "OPEN"}
+        by_stage = {task["stage"]: task for task in ticket_flow.build_task_specs(cfg, {10: issue})}
+
+        for stage in ("research", "delivery"):
+            self.assertIn("hermes -p default ticket-flow herdr-delegate", by_stage[stage]["body"])
+            self.assertIn("visible Herdr tabs", by_stage[stage]["body"])
+            self.assertNotIn("use `delegate_task` once", by_stage[stage]["body"])
+
+    def test_execution_runner_must_be_supported(self):
+        with self.assertRaisesRegex(ValueError, "execution.runner"):
+            ticket_flow.effective_config(
+                "/tmp/example",
+                "owner/repo",
+                [10],
+                {"execution": {"runner": "tmux"}},
+            )
+
+    def test_final_gate_groups_render_parallel_then_serial_execution(self):
+        cfg = ticket_flow.effective_config(
+            "/tmp/example",
+            "owner/repo",
+            [10],
+            {
+                "gates": {"final": ["make types", "make lint", "make test", "make build"]},
+                "parallelization": {
+                    "tests": {
+                        "max_workers": 2,
+                        "final_gate_groups": [["make types", "make lint"]],
+                    }
+                },
+            },
+        )
+        issue = {"number": 10, "title": "First", "url": "https://github.com/owner/repo/issues/10", "state": "OPEN"}
+        merge = ticket_flow.build_task_specs(cfg, {10: issue})[-1]
+
+        self.assertIn("Parallel final-gate group 1 (maximum 2 concurrent commands)", merge["body"])
+        self.assertIn("- `make types`\n- `make lint`", merge["body"])
+        self.assertIn("Serial final gates, in order", merge["body"])
+        self.assertIn("1. `make test`\n2. `make build`", merge["body"])
+
+    def test_default_merge_body_keeps_all_final_gates_serial(self):
+        cfg = ticket_flow.effective_config("/tmp/example", "owner/repo", [10], {})
+        issue = {"number": 10, "title": "First", "url": "https://github.com/owner/repo/issues/10", "state": "OPEN"}
+        merge = ticket_flow.build_task_specs(cfg, {10: issue})[-1]
+
+        self.assertNotIn("Run up to 2 independent test commands concurrently", merge["body"])
+        self.assertNotIn("Parallel final-gate group", merge["body"])
+        self.assertIn("Serial final gates, in order:\n1. `hermes verify --json`", merge["body"])
+
+    def test_parallel_gate_commands_must_be_declared_final_gates(self):
+        with self.assertRaisesRegex(ValueError, "parallel final gate is not declared"):
+            ticket_flow.effective_config(
+                "/tmp/example",
+                "owner/repo",
+                [10],
+                {
+                    "gates": {"final": ["make test"]},
+                    "parallelization": {"tests": {"final_gate_groups": [["make lint"]]}},
+                },
+            )
+
+    def test_parallel_gate_commands_cannot_appear_twice(self):
+        with self.assertRaisesRegex(ValueError, "parallel final gate is duplicated"):
+            ticket_flow.effective_config(
+                "/tmp/example",
+                "owner/repo",
+                [10],
+                {
+                    "gates": {"final": ["make types"]},
+                    "parallelization": {
+                        "tests": {"final_gate_groups": [["make types"], ["make types"]]}
+                    },
+                },
+            )
+
+    def test_parallel_gate_groups_must_be_a_final_gate_prefix(self):
+        with self.assertRaisesRegex(ValueError, "parallel final gate groups must match a prefix"):
+            ticket_flow.effective_config(
+                "/tmp/example",
+                "owner/repo",
+                [10],
+                {
+                    "gates": {"final": ["make test", "make types", "make lint"]},
+                    "parallelization": {
+                        "tests": {"final_gate_groups": [["make types", "make lint"]]}
+                    },
+                },
+            )
+
+    def test_parallel_gate_group_cannot_exceed_test_worker_limit(self):
+        with self.assertRaisesRegex(ValueError, "parallel final gate group exceeds"):
+            ticket_flow.effective_config(
+                "/tmp/example",
+                "owner/repo",
+                [10],
+                {
+                    "gates": {"final": ["make types", "make lint", "make format"]},
+                    "parallelization": {
+                        "tests": {
+                            "max_workers": 2,
+                            "final_gate_groups": [["make types", "make lint", "make format"]],
+                        }
+                    },
+                },
+            )
+
+    def test_parallel_worker_limits_reject_bool_and_out_of_range_values(self):
+        for value in (True, 0, 5):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "must be an integer from 1 to 4"):
+                    ticket_flow.effective_config(
+                        "/tmp/example",
+                        "owner/repo",
+                        [10],
+                        {"parallelization": {"research": {"max_workers": value}}},
+                    )
+
+    def test_validate_config_reports_missing_parallel_test_settings(self):
+        cfg = ticket_flow.effective_config("/tmp/example", "owner/repo", [10], {})
+        del cfg["parallelization"]["tests"]
+        with self.assertRaisesRegex(ValueError, "parallelization.tests must be an object"):
+            ticket_flow.validate_config(cfg)
 
     def test_manifest_captures_effective_config_and_cards(self):
         cfg = ticket_flow.effective_config("/tmp/example", "owner/repo", [10], {})
